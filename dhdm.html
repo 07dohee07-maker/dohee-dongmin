@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>도희 ❤️ 동민 추억 저장소</title>
+    
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-storage-compat.js"></script>
+
+    <style>
+        :root {
+            --primary-color: #ffafbd;
+            --secondary-color: #ffc3a0;
+            --text-color: #4a4a4a;
+            --bg-color: #fff9f9;
+        }
+
+        body {
+            font-family: 'Pretendard', sans-serif;
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            color: var(--text-color);
+        }
+
+        .container {
+            background: white;
+            padding: 2rem;
+            border-radius: 20px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            width: 90%;
+            max-width: 450px;
+            text-align: center;
+        }
+
+        h1 { font-size: 1.5rem; margin-bottom: 1.5rem; color: #ff6b6b; }
+        .hidden { display: none; }
+
+        /* Input & Button Styles */
+        input[type="text"] {
+            width: 80%;
+            padding: 12px;
+            border: 2px solid #eee;
+            border-radius: 10px;
+            margin-bottom: 1rem;
+            outline: none;
+        }
+
+        button {
+            background: #ff6b6b;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: 0.3s;
+            margin: 5px;
+        }
+
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        button:hover:not(:disabled) { transform: translateY(-2px); opacity: 0.9; }
+
+        /* Game & Photo Sections */
+        .section { margin-top: 20px; padding-top: 20px; border-top: 1px dashed #ffd1d1; }
+        .photo-preview { width: 100%; height: 200px; object-fit: cover; border-radius: 10px; margin-top: 10px; display: none; }
+        
+        /* Modal */
+        .modal {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8); display: none;
+            justify-content: center; align-items: center; z-index: 100;
+        }
+        .modal-content {
+            background: white; padding: 20px; border-radius: 15px; width: 80%; max-width: 350px;
+        }
+        #randomPhoto { width: 100%; border-radius: 10px; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div id="loginSection">
+            <h1>💕 추억 저장소 로그인</h1>
+            <input type="text" id="userName" placeholder="이름을 입력하세요 (도희 또는 동민)">
+            <br>
+            <button onclick="login()">입장하기</button>
+        </div>
+
+        <div id="mainSection" class="hidden">
+            <h1 id="welcomeMsg">환영합니다!</h1>
+
+            <div class="section">
+                <h3>🎮 커플 미니 게임</h3>
+                <p>10초 동안 클릭하세요!</p>
+                <h2 id="scoreDisplay">0</h2>
+                <button id="gameBtn" onclick="startGame()">게임 시작</button>
+                <div id="highScore">최고 점수 불러오는 중...</div>
+            </div>
+
+            <div class="section">
+                <h3>📸 우리들의 추억 업로드</h3>
+                <input type="file" id="fileInput" accept="image/*" multiple style="display:none" onchange="handleFiles(this.files)">
+                <button onclick="document.getElementById('fileInput').click()">사진 선택</button>
+                <div id="uploadStatus"></div>
+            </div>
+
+            <div class="section">
+                <button id="randomBtn" class="hidden" onclick="showRandomPhoto()" style="background: #feb47b;">✨ 랜덤 추억 소환</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="photoModal" class="modal">
+        <div class="modal-content">
+            <h3>이 사진 기억나? 🥰</h3>
+            <img id="randomPhoto" src="" alt="추억 사진">
+            <p id="photoTalk">이 날 무슨 일이 있었는지 이야기해봐요!</p>
+            <button onclick="closeModal()">닫기</button>
+        </div>
+    </div>
+
+    <script>
+        // Firebase 설정 (사용자 정보 입력 필요)
+     apiKey: "AIzaSyAkRnDQnRbtgN1PzBkZ1cbHa8fqchQ6zrQ",
+  authDomain: "dohee-dongmin.firebaseapp.com",
+  databaseURL: "https://dohee-dongmin-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "dohee-dongmin",
+  storageBucket: "dohee-dongmin.firebasestorage.app",
+  messagingSenderId: "918584489743",
+  appId: "1:918584489743:web:98e8c2d62e2e0ce40e307a",
+  measurementId: "G-HMWH64E45M"
+};
+
+        // Firebase 초기화
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+        const storage = firebase.storage();
+
+        let currentUser = "";
+        let uploadedPhotos = [];
+        let score = 0;
+        let isPlaying = false;
+
+        // 1. 로그인 함수
+        function login() {
+            const name = document.getElementById('userName').value;
+            if (name.trim() === "") return alert("이름을 입력해주세요!");
+            
+            currentUser = name;
+            document.getElementById('loginSection').classList.add('hidden');
+            document.getElementById('mainSection').classList.remove('hidden');
+            document.getElementById('welcomeMsg').innerText = `❤️ ${name}님의 공간 ❤️`;
+            
+            loadHighScore();
+        }
+
+        // 2. 게임 기능 & 데이터 저장
+        function startGame() {
+            if (isPlaying) {
+                score++;
+                document.getElementById('scoreDisplay').innerText = score;
+                return;
+            }
+
+            isPlaying = true;
+            score = 0;
+            document.getElementById('scoreDisplay').innerText = score;
+            document.getElementById('gameBtn').innerText = "빨리 클릭!!";
+
+            setTimeout(() => {
+                isPlaying = false;
+                document.getElementById('gameBtn').innerText = "다시 시작";
+                alert(`게임 종료! 점수: ${score}`);
+                saveScore(score);
+            }, 5000); // 5초간 진행
+        }
+
+        function saveScore(score) {
+            database.ref('scores/' + currentUser).set({
+                score: score,
+                timestamp: Date.now()
+            });
+            loadHighScore();
+        }
+
+        function loadHighScore() {
+            database.ref('scores').on('value', (snapshot) => {
+                const data = snapshot.val();
+                let scoreText = "아직 기록이 없어요.";
+                if (data) {
+                    scoreText = Object.entries(data)
+                        .map(([name, obj]) => `${name}: ${obj.score}점`)
+                        .join(' | ');
+                }
+                document.getElementById('highScore').innerText = "🏆 현재 기록: " + scoreText;
+            });
+        }
+
+        // 3 & 5. 사진 업로드 및 관리
+        function handleFiles(files) {
+            Array.from(files).forEach(file => {
+                const storageRef = storage.ref(`photos/${Date.now()}_${file.name}`);
+                const uploadTask = storageRef.put(file);
+
+                document.getElementById('uploadStatus').innerText = "업로드 중...";
+
+                uploadTask.on('state_changed', 
+                    null, 
+                    (error) => alert("업로드 실패!"),
+                    () => {
+                        uploadTask.snapshot.ref.getDownloadURL().then((url) => {
+                            uploadedPhotos.push(url);
+                            document.getElementById('uploadStatus').innerText = "업로드 완료! 🎉";
+                            checkPhotos();
+                        });
+                    }
+                );
+            });
+        }
+
+        function checkPhotos() {
+            // 사진이 2개 이상일 때 랜덤 버튼 활성화
+            if (uploadedPhotos.length >= 2) {
+                document.getElementById('randomBtn').classList.remove('hidden');
+            }
+        }
+
+        // 7. 랜덤 사진 및 이야기 창
+        function showRandomPhoto() {
+            const randomIndex = Math.floor(Math.random() * uploadedPhotos.length);
+            const selectedImg = uploadedPhotos[randomIndex];
+            
+            document.getElementById('randomPhoto').src = selectedImg;
+            document.getElementById('photoModal').style.display = 'flex';
+        }
+
+        function closeModal() {
+            document.getElementById('photoModal').style.display = 'none';
+        }
+    </script>
+</body>
+</html>
